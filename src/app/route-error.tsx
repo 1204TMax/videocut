@@ -21,7 +21,6 @@ import {
   RefreshCw,
 } from 'lucide-react'
 
-import { FreeCutLogo } from '@/components/brand/freecut-logo'
 import { Button } from '@/components/ui/button'
 import { createLogger } from '@/shared/logging/logger'
 import {
@@ -117,7 +116,9 @@ export function RouteErrorScreen({ error, reset }: ErrorComponentProps) {
       />
 
       <div className="w-full max-w-md">
-        <FreeCutLogo variant="full" size="md" className="mb-6 justify-center" />
+        <p className="mb-6 text-center text-lg font-semibold tracking-tight text-foreground">
+          VideoCut
+        </p>
 
         <main className="rounded-2xl border border-border/80 bg-card/70 px-6 py-8 text-center shadow-2xl shadow-black/20 backdrop-blur-sm sm:px-8">
           <div
@@ -147,7 +148,7 @@ export function RouteErrorScreen({ error, reset }: ErrorComponentProps) {
 
             {projectNotFound ? (
               <Button asChild>
-                <Link to="/projects">
+                <Link to="/">
                   <ArrowLeft />
                   {t('app.routeError.backToProjects')}
                 </Link>

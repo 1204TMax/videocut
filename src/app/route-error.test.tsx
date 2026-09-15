@@ -27,11 +27,9 @@ describe('RouteErrorScreen', () => {
   it('turns a missing project into a recovery path with copyable diagnostics', async () => {
     render(<RouteErrorScreen error={new ProjectNotFoundError('project-123')} reset={vi.fn()} />)
 
-    expect(screen.getByRole('heading', { name: "We couldn't find this project" })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'The workspace could not be opened' })).toBeTruthy()
     expect(screen.queryByText('Project not found: project-123')).toBeNull()
-    expect(screen.getByRole('link', { name: 'Back to projects' }).getAttribute('href')).toBe(
-      '/projects',
-    )
+    expect(screen.getByRole('link', { name: 'Back to editor' }).getAttribute('href')).toBe('/')
 
     fireEvent.click(screen.getByRole('button', { name: 'Copy error details' }))
 
