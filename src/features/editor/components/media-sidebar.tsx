@@ -1,6 +1,8 @@
-import { useCallback, useMemo, useRef, useEffect, memo, useState } from 'react'
+import { useCallback, useMemo, useRef, useEffect, memo, lazy, Suspense, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
+  Blend,
+  Captions,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -8,8 +10,10 @@ import {
   FileText,
   Film,
   Image as ImageIcon,
+  Sticker,
   Type,
   Video,
+  WandSparkles,
 } from 'lucide-react'
 import { motion, useReducedMotion } from 'motion/react'
 import { Button } from '@/components/ui/button'
@@ -26,6 +30,8 @@ import {
   setMediaDragData,
   useMediaLibraryStore,
 } from '@/features/editor/deps/media-library'
+import { importTranscriptEditorPanel } from '@/features/editor/deps/timeline-panels'
+import { LottieBrowserPanel } from '@/features/editor/deps/lottie-browser'
 import {
   createOverlayLayerTrack,
   createTextTemplateItem,
@@ -44,8 +50,17 @@ import {
   clampLeftEditorSidebarWidth,
   getEditorLayout,
 } from '@/config/editor-layout'
+import type { EditorSidebarTab } from '@/config/editor-workspaces'
+import { TransitionsPanel } from './transitions-panel'
 import { GenerationPanel } from './generation-panel'
 import type { GenerationType, VideoCutGenerationCandidate } from './generation-panel.types'
+
+const LazyAiPanel = lazy(() => import('./ai-tab').then((module) => ({ default: module.AiTab })))
+const LazyTranscriptEditorPanel = lazy(() =>
+  importTranscriptEditorPanel().then(({ TranscriptEditorPanel }) => ({
+    default: TranscriptEditorPanel,
+  })),
+)
 
 const logger = createLogger('MediaSidebar')
 const TEXT_TEMPLATE_PREVIEW_SHELL =
@@ -256,7 +271,16 @@ const TEXT_TEMPLATE_GROUPS: ReadonlyArray<{
 const DEFAULT_TEXT_TEMPLATE_LABEL = 'Text'
 const ADD_TEXT_TEMPLATE_LABEL = 'Add Text'
 
-type SidebarView = 'media' | 'text' | 'generate-text' | 'generate-image' | 'generate-video'
+type SidebarView =
+  | 'media'
+  | 'text'
+  | 'transitions'
+  | 'lottie'
+  | 'transcript'
+  | 'ai'
+  | 'generate-text'
+  | 'generate-image'
+  | 'generate-video'
 
 const GENERATION_VIEW_BY_TYPE: Record<GenerationType, SidebarView> = {
   text: 'generate-text',
@@ -307,16 +331,36 @@ export const MediaSidebar = memo(function MediaSidebar() {
   // contentVisible/onAnimationComplete handoff.
   const [contentInert, setContentInert] = useState(!leftSidebarOpen)
   const [sidebarView, setSidebarView] = useState<SidebarView>(() =>
-    activeTab === 'text' ? 'text' : 'media',
+    activeTab === 'text' ||
+    activeTab === 'transitions' ||
+    activeTab === 'lottie' ||
+    activeTab === 'transcript' ||
+    activeTab === 'ai'
+      ? activeTab
+      : 'media',
   )
+  const [aiTabActivated, setAiTabActivated] = useState(activeTab === 'ai')
+  const [lottieTabActivated, setLottieTabActivated] = useState(activeTab === 'lottie')
 
   useEffect(() => {
     if (activeTab === 'text') {
-      setSidebarView((view) => (view === 'media' ? 'text' : view))
+      setSidebarView((view) => (getGenerationTypeForView(view) ? view : 'text'))
+    } else if (
+      activeTab === 'transitions' ||
+      activeTab === 'lottie' ||
+      activeTab === 'transcript' ||
+      activeTab === 'ai'
+    ) {
+      setSidebarView(activeTab)
     } else {
       setSidebarView('media')
     }
   }, [activeTab])
+
+  useEffect(() => {
+    if (sidebarView === 'ai') setAiTabActivated(true)
+    if (sidebarView === 'lottie') setLottieTabActivated(true)
+  }, [sidebarView])
 
   useEffect(() => {
     if (leftSidebarOpen) setContentInert(false)
@@ -472,6 +516,10 @@ export const MediaSidebar = memo(function MediaSidebar() {
   const categories = [
     { id: 'media' as const, icon: Film, label: t('editor.mediaSidebar.media') },
     { id: 'text' as const, icon: Type, label: t('editor.mediaSidebar.text') },
+    { id: 'lottie' as const, icon: Sticker, label: t('lottieBrowser.tabLabel') },
+    { id: 'transitions' as const, icon: Blend, label: t('editor.mediaSidebar.transitions') },
+    { id: 'transcript' as const, icon: Captions, label: t('transcript.tabLabel') },
+    { id: 'ai' as const, icon: WandSparkles, label: t('editor.mediaSidebar.ai') },
   ]
 
   const generationType = getGenerationTypeForView(sidebarView)
@@ -481,7 +529,7 @@ export const MediaSidebar = memo(function MediaSidebar() {
     : categories.find((category) => category.id === visibleActiveTab)?.label
 
   const selectSidebarView = useCallback(
-    (view: 'media' | 'text') => {
+    (view: Extract<EditorSidebarTab, SidebarView>) => {
       if (sidebarView === view && leftSidebarOpen) {
         toggleLeftSidebar()
         return
@@ -773,6 +821,42 @@ export const MediaSidebar = memo(function MediaSidebar() {
                     )
                   })}
                 </div>
+              )}
+            </div>
+
+            {/* Stickers */}
+            <div
+              className={`min-h-0 flex-1 overflow-hidden ${visibleActiveTab === 'lottie' ? 'block' : 'hidden'}`}
+            >
+              {lottieTabActivated && <LottieBrowserPanel />}
+            </div>
+
+            {/* Transitions */}
+            <div
+              className={`min-h-0 flex-1 overflow-hidden ${visibleActiveTab === 'transitions' ? 'block' : 'hidden'}`}
+            >
+              {visibleActiveTab === 'transitions' && <TransitionsPanel />}
+            </div>
+
+            {/* Subtitles */}
+            <div
+              className={`min-h-0 flex-1 overflow-hidden ${visibleActiveTab === 'transcript' ? 'block' : 'hidden'}`}
+            >
+              {visibleActiveTab === 'transcript' && (
+                <Suspense fallback={null}>
+                  <LazyTranscriptEditorPanel active />
+                </Suspense>
+              )}
+            </div>
+
+            {/* Original FreeCut AI tools */}
+            <div
+              className={`min-h-0 flex-1 overflow-hidden ${visibleActiveTab === 'ai' ? 'block' : 'hidden'}`}
+            >
+              {aiTabActivated && (
+                <Suspense fallback={null}>
+                  <LazyAiPanel />
+                </Suspense>
               )}
             </div>
           </>
