@@ -4,6 +4,8 @@
 
 在线体验：[videocut-1du.pages.dev](https://videocut-1du.pages.dev)
 
+完整的产品背景、需求范围和部署方式请查看：[VideoCut 项目说明](./docs/PROJECT.md)。
+
 ## 核心能力
 
 - 视频、音频、图片与文字多轨编辑
