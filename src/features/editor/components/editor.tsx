@@ -337,7 +337,6 @@ export const LoadedEditor = memo(function LoadedEditor({
   project,
   migration,
 }: EditorProps) {
-  const { t } = useTranslation()
   const router = useRouter()
   const [exportDialogOpen, setExportDialogOpen] = useState(false)
   const editorDensity = useSettingsStore((s) => s.editorDensity)
@@ -587,14 +586,14 @@ export const LoadedEditor = memo(function LoadedEditor({
       className="h-screen bg-background flex flex-col overflow-hidden"
       style={editorLayoutCssVars as import('react').CSSProperties}
       role="application"
-      aria-label={t('editor.editor.appLabel')}
+      aria-label="VideoCut 视频编辑器"
     >
       <AutoSaveController onSave={handleSave} />
       <TimelineShortcutsController />
 
       {/* Top Toolbar */}
       <InteractionLockRegion locked={isMaskEditingActive}>
-        <Toolbar onExport={handleExport} />
+        <Toolbar onOverwrite={handleSave} onExport={handleExport} />
       </InteractionLockRegion>
 
       {/* Main Layout: Full-height sidebar + vertical split */}

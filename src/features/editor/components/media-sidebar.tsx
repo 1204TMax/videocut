@@ -1,6 +1,16 @@
 import { useCallback, useMemo, useRef, useEffect, memo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Film, Type } from 'lucide-react'
+import {
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  ChevronUp,
+  FileText,
+  Film,
+  Image as ImageIcon,
+  Type,
+  Video,
+} from 'lucide-react'
 import { motion, useReducedMotion } from 'motion/react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/shared/ui/cn'
@@ -14,6 +24,7 @@ import {
   clearMediaDragData,
   MediaLibrary,
   setMediaDragData,
+  useMediaLibraryStore,
 } from '@/features/editor/deps/media-library'
 import {
   createOverlayLayerTrack,
@@ -33,6 +44,8 @@ import {
   clampLeftEditorSidebarWidth,
   getEditorLayout,
 } from '@/config/editor-layout'
+import { GenerationPanel } from './generation-panel'
+import type { GenerationType, VideoCutGenerationCandidate } from './generation-panel.types'
 
 const logger = createLogger('MediaSidebar')
 const TEXT_TEMPLATE_PREVIEW_SHELL =
@@ -243,6 +256,34 @@ const TEXT_TEMPLATE_GROUPS: ReadonlyArray<{
 const DEFAULT_TEXT_TEMPLATE_LABEL = 'Text'
 const ADD_TEXT_TEMPLATE_LABEL = 'Add Text'
 
+type SidebarView = 'media' | 'text' | 'generate-text' | 'generate-image' | 'generate-video'
+
+const GENERATION_VIEW_BY_TYPE: Record<GenerationType, SidebarView> = {
+  text: 'generate-text',
+  image: 'generate-image',
+  video: 'generate-video',
+}
+
+const GENERATION_TYPE_BY_VIEW: Partial<Record<SidebarView, GenerationType>> = {
+  'generate-text': 'text',
+  'generate-image': 'image',
+  'generate-video': 'video',
+}
+
+const GENERATION_NAV_ITEMS: ReadonlyArray<{
+  type: GenerationType
+  label: string
+  icon: typeof FileText
+}> = [
+  { type: 'text', label: '文本生成', icon: FileText },
+  { type: 'image', label: '图片生成', icon: ImageIcon },
+  { type: 'video', label: '视频生成', icon: Video },
+]
+
+function getGenerationTypeForView(view: SidebarView): GenerationType | null {
+  return GENERATION_TYPE_BY_VIEW[view] ?? null
+}
+
 export const MediaSidebar = memo(function MediaSidebar() {
   const { t } = useTranslation()
   const editorDensity = useSettingsStore((s) => s.editorDensity)
@@ -265,6 +306,18 @@ export const MediaSidebar = memo(function MediaSidebar() {
   // the panel is interactive as it slides in. Mirrors the right sidebar's
   // contentVisible/onAnimationComplete handoff.
   const [contentInert, setContentInert] = useState(!leftSidebarOpen)
+  const [sidebarView, setSidebarView] = useState<SidebarView>(() =>
+    activeTab === 'text' ? 'text' : 'media',
+  )
+
+  useEffect(() => {
+    if (activeTab === 'text') {
+      setSidebarView((view) => (view === 'media' ? 'text' : view))
+    } else {
+      setSidebarView('media')
+    }
+  }, [activeTab])
+
   useEffect(() => {
     if (leftSidebarOpen) setContentInert(false)
   }, [leftSidebarOpen])
@@ -330,7 +383,11 @@ export const MediaSidebar = memo(function MediaSidebar() {
   // Add text item on its own new layer at the playhead, matching what dragging
   // the same preset onto the canvas does (minus the cursor-driven position).
   const handleAddText = useCallback(
-    (presetId?: (typeof TEXT_STYLE_PRESETS)[number]['id']) => {
+    (
+      presetId?: (typeof TEXT_STYLE_PRESETS)[number]['id'],
+      generatedText?: string,
+      generatedLabel?: string,
+    ) => {
       // Read all needed state from stores directly to avoid subscriptions
       const { tracks, fps, addItemOnNewTrack } = useTimelineStore.getState()
       const { activeTrackId, selectItems, setActiveTrack } = useSelectionStore.getState()
@@ -361,8 +418,8 @@ export const MediaSidebar = memo(function MediaSidebar() {
           canvasHeight,
           fps,
         },
-        label: textStylePreset?.label,
-        text: t('editor.textSection.defaultText'),
+        label: generatedLabel ?? textStylePreset?.label,
+        text: generatedText?.trim() || t('editor.textSection.defaultText'),
         textStylePresetId: presetId,
       })
 
@@ -371,6 +428,30 @@ export const MediaSidebar = memo(function MediaSidebar() {
       selectItems([textItem.id])
     },
     [t],
+  )
+
+  const handleUseGenerationCandidate = useCallback(
+    async (candidate: VideoCutGenerationCandidate, type: GenerationType) => {
+      if (type === 'text') {
+        const generatedText = candidate.text ?? candidate.content
+        if (!generatedText?.trim()) {
+          throw new Error('候选文本为空')
+        }
+        handleAddText(undefined, generatedText, candidate.name ?? '生成文本')
+        return
+      }
+
+      const url = candidate.url ?? candidate.thumb
+      if (!url) {
+        throw new Error('候选素材缺少可访问地址')
+      }
+
+      const imported = await useMediaLibraryStore.getState().importMediaFromUrl(url)
+      if (imported.length === 0) {
+        throw new Error('素材导入失败')
+      }
+    },
+    [handleAddText],
   )
 
   const textTemplatesByLayout = useMemo(() => {
@@ -393,9 +474,34 @@ export const MediaSidebar = memo(function MediaSidebar() {
     { id: 'text' as const, icon: Type, label: t('editor.mediaSidebar.text') },
   ]
 
-  // Older persisted layouts can point at a removed tab. Render the demo's
-  // media tab until the next explicit tab selection normalizes that state.
-  const visibleActiveTab = activeTab === 'text' ? 'text' : 'media'
+  const generationType = getGenerationTypeForView(sidebarView)
+  const visibleActiveTab = generationType ? 'text' : sidebarView
+  const visiblePanelLabel = generationType
+    ? GENERATION_NAV_ITEMS.find((item) => item.type === generationType)?.label
+    : categories.find((category) => category.id === visibleActiveTab)?.label
+
+  const selectSidebarView = useCallback(
+    (view: 'media' | 'text') => {
+      if (sidebarView === view && leftSidebarOpen) {
+        toggleLeftSidebar()
+        return
+      }
+
+      setSidebarView(view)
+      setActiveTab(view)
+      if (!leftSidebarOpen) toggleLeftSidebar()
+    },
+    [leftSidebarOpen, setActiveTab, sidebarView, toggleLeftSidebar],
+  )
+
+  const selectGenerationView = useCallback(
+    (type: GenerationType) => {
+      setSidebarView(GENERATION_VIEW_BY_TYPE[type])
+      setActiveTab('text')
+      if (!leftSidebarOpen) toggleLeftSidebar()
+    },
+    [leftSidebarOpen, setActiveTab, toggleLeftSidebar],
+  )
 
   const shouldSuppressGeneratedItemClick = useCallback(() => {
     if (!suppressGeneratedItemClickRef.current) {
@@ -472,14 +578,8 @@ export const MediaSidebar = memo(function MediaSidebar() {
           {categories.map(({ id, icon: Icon, label }) => (
             <button
               key={id}
-              onClick={() => {
-                if (visibleActiveTab === id && leftSidebarOpen) {
-                  toggleLeftSidebar()
-                } else {
-                  setActiveTab(id)
-                  if (!leftSidebarOpen) toggleLeftSidebar()
-                }
-              }}
+              type="button"
+              onClick={() => selectSidebarView(id)}
               className={`
                 w-9 h-9 rounded-lg flex items-center justify-center transition-[transform,background-color,color] duration-150 active:scale-95
                 ${
@@ -494,6 +594,30 @@ export const MediaSidebar = memo(function MediaSidebar() {
               <Icon className="w-4 h-4" />
             </button>
           ))}
+
+          <div className="mt-1 flex flex-col gap-1 border-t border-border/70 pt-1">
+            {GENERATION_NAV_ITEMS.map(({ type, label, icon: Icon }) => {
+              const isActive = sidebarView === GENERATION_VIEW_BY_TYPE[type]
+              return (
+                <button
+                  key={type}
+                  type="button"
+                  onClick={() => selectGenerationView(type)}
+                  className={cn(
+                    'flex h-7 w-9 items-center justify-center rounded-lg transition-[transform,background-color,color] duration-150 active:scale-95',
+                    isActive
+                      ? 'bg-primary/15 text-primary hover:bg-primary/25'
+                      : 'text-muted-foreground hover:bg-secondary/50 hover:text-foreground',
+                  )}
+                  aria-label={label}
+                  data-tooltip={label}
+                  data-tooltip-side="right"
+                >
+                  <Icon className="h-3.5 w-3.5" />
+                </button>
+              )
+            })}
+          </div>
         </div>
       </div>
 
@@ -533,9 +657,7 @@ export const MediaSidebar = memo(function MediaSidebar() {
               className="flex items-center justify-between px-3 border-b border-border flex-shrink-0"
               style={{ height: EDITOR_LAYOUT_CSS_VALUES.sidebarHeaderHeight }}
             >
-              <span className="text-sm font-medium text-foreground">
-                {categories.find((c) => c.id === visibleActiveTab)?.label}
-              </span>
+              <span className="text-sm font-medium text-foreground">{visiblePanelLabel}</span>
               <Button
                 variant="ghost"
                 size="icon"
@@ -576,7 +698,13 @@ export const MediaSidebar = memo(function MediaSidebar() {
             <div
               className={`min-h-0 flex-1 overflow-y-auto p-3 ${visibleActiveTab === 'text' ? 'block' : 'hidden'}`}
             >
-              <div className="space-y-3">
+              {generationType ? (
+                <GenerationPanel
+                  key={generationType}
+                  type={generationType}
+                  onUseCandidate={handleUseGenerationCandidate}
+                />
+              ) : (
                 <div className="space-y-3">
                   <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
                     {t('editor.mediaSidebar.templates')}
@@ -607,10 +735,10 @@ export const MediaSidebar = memo(function MediaSidebar() {
                                 if (shouldSuppressGeneratedItemClick()) return
                                 handleAddText()
                               }}
-                              className="flex flex-col items-center gap-1 p-1.5 rounded-md border border-border bg-secondary/30 hover:bg-secondary/50 hover:border-primary/50 transition-[transform,background-color,border-color,color] duration-150 active:scale-[0.98] group"
+                              className="flex flex-col items-center gap-1 rounded-md border border-border bg-secondary/30 p-1.5 transition-[transform,background-color,border-color,color] duration-150 hover:border-primary/50 hover:bg-secondary/50 active:scale-[0.98] group"
                             >
                               {renderTextTemplatePreview()}
-                              <span className="text-[9px] text-muted-foreground group-hover:text-foreground text-center leading-tight w-full">
+                              <span className="w-full text-center text-[9px] leading-tight text-muted-foreground group-hover:text-foreground">
                                 {ADD_TEXT_TEMPLATE_LABEL}
                               </span>
                             </button>
@@ -630,13 +758,12 @@ export const MediaSidebar = memo(function MediaSidebar() {
                                 handleAddText(preset.id)
                               }}
                               className={cn(
-                                'flex flex-col items-center gap-1 p-1.5 rounded-md border border-border',
-                                'bg-secondary/30 hover:bg-secondary/50 hover:border-primary/50',
-                                'transition-[transform,background-color,border-color,color] duration-150 active:scale-[0.98] group',
+                                'flex flex-col items-center gap-1 rounded-md border border-border p-1.5',
+                                'bg-secondary/30 transition-[transform,background-color,border-color,color] duration-150 hover:border-primary/50 hover:bg-secondary/50 active:scale-[0.98] group',
                               )}
                             >
                               {renderTextTemplatePreview(preset)}
-                              <span className="text-[9px] text-muted-foreground group-hover:text-foreground text-center leading-tight w-full">
+                              <span className="w-full text-center text-[9px] leading-tight text-muted-foreground group-hover:text-foreground">
                                 {preset.label}
                               </span>
                             </button>
@@ -646,7 +773,7 @@ export const MediaSidebar = memo(function MediaSidebar() {
                     )
                   })}
                 </div>
-              </div>
+              )}
             </div>
           </>
         </div>

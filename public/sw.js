@@ -1,18 +1,10 @@
-// __FREECUT_BUILD_ID__ is replaced at build time (see serviceWorkerVersionPlugin in
+// __VIDEOCUT_BUILD_ID__ is replaced at build time (see serviceWorkerVersionPlugin in
 // vite.config.ts) with the hashed entry-chunk filename, so the cache name — and the SW
 // file bytes — change on every deploy. That lets registration.update() detect new
 // versions and lets `activate` purge the previous deploy's cached chunks. In dev the SW
 // is never registered (PROD-gated in main.tsx), so the unreplaced literal is harmless.
-const CACHE_VERSION = 'freecut-app-shell-__FREECUT_BUILD_ID__'
-const APP_SHELL_URLS = [
-  '/',
-  '/index.html',
-  '/favicon.svg',
-  '/manifest.webmanifest',
-  '/icons/icon-192.png',
-  '/icons/icon-512.png',
-  '/icons/icon-maskable-512.png',
-]
+const CACHE_VERSION = 'videocut-app-shell-__VIDEOCUT_BUILD_ID__'
+const APP_SHELL_URLS = ['/', '/index.html', '/manifest.webmanifest']
 const CACHEABLE_DESTINATIONS = new Set(['document', 'script', 'style', 'font', 'image'])
 const EXCLUDED_PATH_PREFIXES = ['/moss-tts/']
 const MAX_DYNAMIC_CACHE_ENTRIES = 160

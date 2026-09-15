@@ -4,7 +4,7 @@ import { CURRENT_SCHEMA_VERSION } from './migrations'
 import type { Project } from '@/types/project'
 
 export const DEMO_PROJECT_ID = 'sucai-edit'
-export const DEMO_PROJECT_NAME = '内容编辑工作台'
+export const DEMO_PROJECT_NAME = 'VideoCut'
 
 function createDemoProject(): Project {
   const now = Date.now()
