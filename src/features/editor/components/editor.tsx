@@ -1,4 +1,13 @@
-import { useEffect, useState, useRef, useCallback, memo, lazy, Suspense } from 'react'
+import {
+  useEffect,
+  useLayoutEffect,
+  useState,
+  useRef,
+  useCallback,
+  memo,
+  lazy,
+  Suspense,
+} from 'react'
 import { useRouter } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
 import { createLogger, createOperationId } from '@/shared/logging/logger'
@@ -10,9 +19,7 @@ import { Toolbar } from './toolbar'
 import { MediaSidebar } from './media-sidebar'
 import { PropertiesSidebar } from './properties-sidebar'
 import { PreviewArea } from './preview-area'
-import { MotionPreviewArea, MotionTimelineDock } from './compose-workspace/compose-layout'
 import { InteractionLockRegion } from './interaction-lock-region'
-import { AudioMeterPanel } from './audio-meter-panel'
 import {
   importTimeline,
   importBentoLayoutDialog,
@@ -33,7 +40,6 @@ import {
 } from '@/features/editor/deps/timeline-hooks'
 import { initTransitionChainSubscription } from '@/features/editor/deps/timeline-subscriptions'
 import { useTimelineStore } from '@/features/editor/deps/timeline-store'
-import { importBundleExportDialog } from '@/features/editor/deps/project-bundle'
 import { useMediaLibraryStore } from '@/features/editor/deps/media-library'
 import { useSettingsStore } from '@/features/editor/deps/settings'
 import { useMaskEditorStore } from '@/features/editor/deps/preview'
@@ -41,15 +47,8 @@ import { usePlaybackStore } from '@/shared/state/playback'
 import { useEditorStore } from '@/shared/state/editor'
 import { clearPreviewAudioCache } from '@/features/editor/deps/composition-runtime'
 import { useProjectStore } from '@/features/editor/deps/projects'
-import {
-  importExportDialog,
-  importExportsDialog,
-  RenderQueuePersistence,
-  RenderQueueRunner,
-  useRenderQueueStore,
-} from '@/features/editor/deps/export-contract'
+import { importExportDialog } from '@/features/editor/deps/export-contract'
 import { getEditorLayout, getEditorLayoutCssVars } from '@/config/editor-layout'
-import { EDITOR_WORKSPACE_TIMELINE_SIZE, type EditorWorkspaceId } from '@/config/editor-workspaces'
 import {
   createProjectUpgradeBackup,
   formatProjectUpgradeBackupName,
@@ -67,51 +66,10 @@ import {
 import { IoDragReadout } from '@/shared/timeline/io-range'
 const logger = createLogger('Editor')
 const LazyTimeline = lazy(() => importTimeline().then(({ Timeline }) => ({ default: Timeline })))
-const LazyColorGradingDock = lazy(() =>
-  import('./color-grading-dock').then(({ ColorGradingDock }) => ({ default: ColorGradingDock })),
-)
-const LazyColorTimelineNavigator = lazy(() =>
-  import('./color-timeline-navigator').then(({ ColorTimelineNavigator }) => ({
-    default: ColorTimelineNavigator,
-  })),
-)
 const EDITOR_PROJECT_ROUTE_ID = '/editor/$projectId'
-
-function workspaceTimelineSizeStorageKey(workspace: EditorWorkspaceId): string {
-  return `editor:workspaceTimelineSize:${workspace}`
-}
-
-function loadWorkspaceTimelineSize(workspace: EditorWorkspaceId): number | null {
-  try {
-    const raw = localStorage.getItem(workspaceTimelineSizeStorageKey(workspace))
-    if (raw === null) return null
-    const parsed = Number(raw)
-    return Number.isFinite(parsed) ? parsed : null
-  } catch {
-    return null
-  }
-}
-
-function saveWorkspaceTimelineSize(workspace: EditorWorkspaceId, size: number): void {
-  try {
-    localStorage.setItem(workspaceTimelineSizeStorageKey(workspace), String(size))
-  } catch {
-    /* noop */
-  }
-}
 const LazyExportDialog = lazy(() =>
   importExportDialog().then((module) => ({
     default: module.ExportDialog,
-  })),
-)
-const LazyBundleExportDialog = lazy(() =>
-  importBundleExportDialog().then((module) => ({
-    default: module.BundleExportDialog,
-  })),
-)
-const LazyExportsDialog = lazy(() =>
-  importExportsDialog().then((module) => ({
-    default: module.ExportsDialog,
   })),
 )
 const LazyClearKeyframesDialog = lazy(() =>
@@ -161,10 +119,6 @@ const LazyFillerRemovalDialog = lazy(() =>
 )
 function preloadExportDialog() {
   return importExportDialog()
-}
-
-function preloadBundleExportDialog() {
-  return importBundleExportDialog()
 }
 
 /** Project metadata passed from route loader (timeline loaded separately via loadTimeline) */
@@ -386,24 +340,24 @@ export const LoadedEditor = memo(function LoadedEditor({
   const { t } = useTranslation()
   const router = useRouter()
   const [exportDialogOpen, setExportDialogOpen] = useState(false)
-  const [bundleExportDialogOpen, setBundleExportDialogOpen] = useState(false)
-  const [renderQueueOpen, setRenderQueueOpen] = useState(false)
-  const renderQueueActiveCount = useRenderQueueStore(
-    (s) => s.jobs.filter((j) => j.status === 'queued' || j.status === 'rendering').length,
-  )
-  const [bundleFileHandle, setBundleFileHandle] = useState<FileSystemFileHandle | undefined>()
   const editorDensity = useSettingsStore((s) => s.editorDensity)
   const snapEnabledPreference = useSettingsStore((s) => s.snapEnabled)
   const editorLayout = getEditorLayout(editorDensity)
   const editorLayoutCssVars = getEditorLayoutCssVars(editorLayout)
   const syncSidebarLayout = useEditorStore((s) => s.syncSidebarLayout)
-  const propertiesFullColumn = useEditorStore((s) => s.propertiesFullColumn)
-  const mediaFullColumn = useEditorStore((s) => s.mediaFullColumn)
   const workspace = useEditorStore((s) => s.workspace)
+  const mediaFullColumn = useEditorStore((s) => s.mediaFullColumn)
+  const propertiesFullColumn = useEditorStore((s) => s.propertiesFullColumn)
+  const leftSidebarOpen = useEditorStore((s) => s.leftSidebarOpen)
+  const rightSidebarOpen = useEditorStore((s) => s.rightSidebarOpen)
+  const setWorkspace = useEditorStore((s) => s.setWorkspace)
+  const toggleMediaFullColumn = useEditorStore((s) => s.toggleMediaFullColumn)
+  const togglePropertiesFullColumn = useEditorStore((s) => s.togglePropertiesFullColumn)
+  const setLeftSidebarOpen = useEditorStore((s) => s.setLeftSidebarOpen)
+  const setRightSidebarOpen = useEditorStore((s) => s.setRightSidebarOpen)
   const isMaskEditingActive = useMaskEditorStore((s) => s.isEditing)
   const hasRefreshedMigrationStateRef = useRef(false)
   const timelinePanelRef = useRef<ImperativePanelHandle>(null)
-  const previousWorkspaceRef = useRef(workspace)
 
   // Guard against concurrent saves (e.g., spamming Ctrl+S)
   const isSavingRef = useRef(false)
@@ -430,14 +384,13 @@ export const LoadedEditor = memo(function LoadedEditor({
     }
   }, [])
 
-  // Preload export dialogs during idle time so they open instantly.
+  // Preload the export dialog during idle time so it opens instantly.
   useEffect(() => {
     const id = requestIdleCallback(() => {
       // Best-effort idle preloads: swallow rejections (offline chunk load, or
       // the dynamic import racing test-environment teardown). The real load
       // happens later via lazy() at render time with its own error boundary.
       void preloadExportDialog().catch(() => {})
-      void preloadBundleExportDialog().catch(() => {})
     })
     return () => cancelIdleCallback(id)
   }, [])
@@ -541,32 +494,37 @@ export const LoadedEditor = memo(function LoadedEditor({
     syncSidebarLayout(editorLayout)
   }, [editorLayout, syncSidebarLayout])
 
-  // Apply the per-workspace timeline split when switching workspaces:
-  // snapshot the outgoing workspace's split, then restore the incoming
-  // workspace's saved split (or its preset default on first visit).
-  useEffect(() => {
-    const previousWorkspace = previousWorkspaceRef.current
-    if (previousWorkspace === workspace) return
-    previousWorkspaceRef.current = workspace
-
-    // Workspace switches should not carry transient scrub/hover preview
-    // frames across surfaces. Color scopes intentionally skip previewFrame
-    // samples, so a stale Edit preview frame can make them appear frozen.
-    usePlaybackStore.getState().setPreviewFrame(null)
-
-    const timelinePanel = timelinePanelRef.current
-    if (!timelinePanel) return
-
-    saveWorkspaceTimelineSize(previousWorkspace, timelinePanel.getSize())
-
-    const targetSize =
-      loadWorkspaceTimelineSize(workspace) ??
-      EDITOR_WORKSPACE_TIMELINE_SIZE[workspace] ??
-      editorLayout.timelineDefaultSize
-    timelinePanel.resize(
-      Math.min(editorLayout.timelineMaxSize, Math.max(editorLayout.timelineMinSize, targetSize)),
-    )
-  }, [workspace, editorLayout])
+  // The product has one editing surface. Normalize any persisted editor
+  // preferences before the first paint so the preview, sidebars, and timeline
+  // always open in the same layout.
+  useLayoutEffect(() => {
+    if (workspace !== 'edit') {
+      setWorkspace?.('edit')
+    }
+    if (mediaFullColumn) {
+      toggleMediaFullColumn?.()
+    }
+    if (propertiesFullColumn) {
+      togglePropertiesFullColumn?.()
+    }
+    if (!leftSidebarOpen) {
+      setLeftSidebarOpen?.(true)
+    }
+    if (!rightSidebarOpen) {
+      setRightSidebarOpen?.(true)
+    }
+  }, [
+    leftSidebarOpen,
+    mediaFullColumn,
+    propertiesFullColumn,
+    rightSidebarOpen,
+    setLeftSidebarOpen,
+    setRightSidebarOpen,
+    setWorkspace,
+    toggleMediaFullColumn,
+    togglePropertiesFullColumn,
+    workspace,
+  ])
 
   useEffect(() => {
     const timelineState = useTimelineStore.getState()
@@ -613,43 +571,6 @@ export const LoadedEditor = memo(function LoadedEditor({
     setExportDialogOpen(true)
   }, [])
 
-  const handleOpenRenderQueue = useCallback(() => {
-    void importExportsDialog()
-    setRenderQueueOpen(true)
-  }, [])
-
-  const handleExportBundle = useCallback(async () => {
-    void preloadBundleExportDialog()
-
-    // Show native save picker BEFORE opening the modal dialog to avoid
-    // focus-loss conflicts between the native picker and Radix Dialog.
-    if (typeof window.showSaveFilePicker === 'function') {
-      const safeName = project.name
-        .replace(/[<>:"/\\|?*]/g, '_')
-        .replace(/\s+/g, '_')
-        .substring(0, 100)
-      try {
-        const handle = await window.showSaveFilePicker({
-          suggestedName: `${safeName}.freecut.zip`,
-          types: [
-            {
-              description: i18n.t('editor.editor.projectBundle'),
-              accept: { 'application/zip': ['.freecut.zip'] },
-            },
-          ],
-        })
-        setBundleFileHandle(handle)
-      } catch {
-        // User cancelled the picker - don't open the dialog
-        return
-      }
-    } else {
-      setBundleFileHandle(undefined)
-    }
-
-    setBundleExportDialogOpen(true)
-  }, [project.name])
-
   // Enable keyboard shortcuts
   useEditorHotkeys({
     onSave: handleSave,
@@ -660,11 +581,6 @@ export const LoadedEditor = memo(function LoadedEditor({
   useTransitionBreakageNotifications()
 
   const timelineDuration = 30
-  const isColorWorkspace = workspace === 'color'
-  const isMotionWorkspace = workspace === 'motion'
-  // Color replaces the default editor shell. Motion deliberately keeps it and
-  // swaps the preview/timeline surfaces while retaining the shared sidebars.
-  const hidesDefaultSidebars = isColorWorkspace
 
   return (
     <div
@@ -678,171 +594,70 @@ export const LoadedEditor = memo(function LoadedEditor({
 
       {/* Top Toolbar */}
       <InteractionLockRegion locked={isMaskEditingActive}>
-        <Toolbar
-          projectId={projectId}
-          project={project}
-          onSave={handleSave}
-          onExport={handleExport}
-          onExportBundle={handleExportBundle}
-          onOpenRenderQueue={handleOpenRenderQueue}
-          renderQueueCount={renderQueueActiveCount}
-        />
+        <Toolbar onExport={handleExport} />
       </InteractionLockRegion>
 
       {/* Main Layout: Full-height sidebar + vertical split */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Left Sidebar - Media Library (full column mode) */}
-        {mediaFullColumn && !hidesDefaultSidebars && (
-          <InteractionLockRegion locked={isMaskEditingActive}>
-            <ErrorBoundary level="feature">
-              <MediaSidebar />
-            </ErrorBoundary>
-          </InteractionLockRegion>
-        )}
+        <ResizablePanelGroup
+          direction="vertical"
+          className="flex-1 min-w-0"
+          autoSaveId="editor:timeline-layout"
+        >
+          {/* Top - Materials + Preview + Properties */}
+          <ResizablePanel
+            defaultSize={100 - editorLayout.timelineDefaultSize}
+            minSize={100 - editorLayout.timelineMaxSize}
+            maxSize={100 - editorLayout.timelineMinSize}
+          >
+            <div className="h-full flex overflow-hidden relative">
+              <InteractionLockRegion locked={isMaskEditingActive}>
+                <ErrorBoundary level="feature">
+                  <MediaSidebar />
+                </ErrorBoundary>
+              </InteractionLockRegion>
 
-        {/* Right side: Preview/Properties + Timeline */}
-        {isColorWorkspace ? (
-          <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
               <ErrorBoundary level="feature">
                 <PreviewArea project={project} />
               </ErrorBoundary>
+
+              <InteractionLockRegion locked={isMaskEditingActive}>
+                <ErrorBoundary level="feature">
+                  <PropertiesSidebar />
+                </ErrorBoundary>
+              </InteractionLockRegion>
             </div>
-            <Suspense fallback={null}>
-              <LazyColorTimelineNavigator />
-            </Suspense>
-            <InteractionLockRegion
-              locked={isMaskEditingActive}
-              className="h-[37%] min-h-[288px] max-h-[39vh] shrink-0"
-            >
+          </ResizablePanel>
+
+          <ResizableHandle
+            withHandle
+            className={isMaskEditingActive ? 'pointer-events-none opacity-60' : undefined}
+          />
+
+          {/* Bottom - Timeline */}
+          <ResizablePanel
+            ref={timelinePanelRef}
+            defaultSize={editorLayout.timelineDefaultSize}
+            minSize={editorLayout.timelineMinSize}
+            maxSize={editorLayout.timelineMaxSize}
+          >
+            <InteractionLockRegion locked={isMaskEditingActive} className="h-full">
               <ErrorBoundary level="feature">
                 <Suspense fallback={null}>
-                  <LazyColorGradingDock />
+                  <LazyTimeline duration={timelineDuration} />
                 </Suspense>
               </ErrorBoundary>
             </InteractionLockRegion>
-          </div>
-        ) : (
-          <ResizablePanelGroup
-            direction="vertical"
-            className="flex-1 min-w-0"
-            autoSaveId="editor:timeline-layout"
-          >
-            {/* Top - Preview + Properties (inline mode) */}
-            <ResizablePanel
-              defaultSize={100 - editorLayout.timelineDefaultSize}
-              minSize={100 - editorLayout.timelineMaxSize}
-              maxSize={100 - editorLayout.timelineMinSize}
-            >
-              <div className="h-full flex overflow-hidden relative">
-                {/* Left Sidebar - Media Library (inline with preview) */}
-                {!mediaFullColumn && (
-                  <InteractionLockRegion locked={isMaskEditingActive}>
-                    <ErrorBoundary level="feature">
-                      <MediaSidebar />
-                    </ErrorBoundary>
-                  </InteractionLockRegion>
-                )}
-
-                {/* Center - Preview */}
-                <ErrorBoundary level="feature">
-                  {isMotionWorkspace ? (
-                    <MotionPreviewArea project={project} />
-                  ) : (
-                    <PreviewArea project={project} />
-                  )}
-                </ErrorBoundary>
-
-                {/* Right Sidebar - Properties (inline with preview) */}
-                {!propertiesFullColumn && (
-                  <InteractionLockRegion locked={isMaskEditingActive}>
-                    <ErrorBoundary level="feature">
-                      <PropertiesSidebar />
-                    </ErrorBoundary>
-                  </InteractionLockRegion>
-                )}
-              </div>
-            </ResizablePanel>
-
-            <ResizableHandle
-              withHandle
-              className={isMaskEditingActive ? 'pointer-events-none opacity-60' : undefined}
-            />
-
-            {/* Bottom - Timeline */}
-            <ResizablePanel
-              ref={timelinePanelRef}
-              defaultSize={editorLayout.timelineDefaultSize}
-              minSize={editorLayout.timelineMinSize}
-              maxSize={editorLayout.timelineMaxSize}
-            >
-              <InteractionLockRegion locked={isMaskEditingActive} className="h-full">
-                <ErrorBoundary level="feature">
-                  <div className="h-full flex overflow-hidden">
-                    <div className="min-w-0 flex-1">
-                      {isMotionWorkspace ? (
-                        <MotionTimelineDock project={project} />
-                      ) : (
-                        <Suspense fallback={null}>
-                          <LazyTimeline duration={timelineDuration} />
-                        </Suspense>
-                      )}
-                    </div>
-                    <AudioMeterPanel />
-                  </div>
-                </ErrorBoundary>
-              </InteractionLockRegion>
-            </ResizablePanel>
-          </ResizablePanelGroup>
-        )}
-
-        {/* Right Sidebar - Properties (full column mode) */}
-        {propertiesFullColumn && !hidesDefaultSidebars && (
-          <InteractionLockRegion locked={isMaskEditingActive}>
-            <ErrorBoundary level="feature">
-              <PropertiesSidebar />
-            </ErrorBoundary>
-          </InteractionLockRegion>
-        )}
+          </ResizablePanel>
+        </ResizablePanelGroup>
       </div>
 
       <Suspense fallback={null}>
         {/* Export Dialog */}
         {exportDialogOpen && (
-          <LazyExportDialog
-            open={exportDialogOpen}
-            onClose={() => setExportDialogOpen(false)}
-            onOpenRenderQueue={handleOpenRenderQueue}
-          />
-        )}
-
-        {/* Exports + render queue dialog */}
-        {renderQueueOpen && (
-          <LazyExportsDialog
-            open={renderQueueOpen}
-            onClose={() => setRenderQueueOpen(false)}
-            projectId={projectId}
-          />
-        )}
-
-        {/* Bundle Export Dialog */}
-        {bundleExportDialogOpen && (
-          <LazyBundleExportDialog
-            open={bundleExportDialogOpen}
-            onClose={() => {
-              setBundleExportDialogOpen(false)
-              setBundleFileHandle(undefined)
-            }}
-            projectId={projectId}
-            onBeforeExport={handleSave}
-            fileHandle={bundleFileHandle}
-          />
+          <LazyExportDialog open={exportDialogOpen} onClose={() => setExportDialogOpen(false)} />
         )}
       </Suspense>
-
-      {/* Restores/persists the per-project queue, and drains it serially. */}
-      <RenderQueuePersistence projectId={projectId} />
-      <RenderQueueRunner />
 
       <EditorDialogHost projectId={projectId} />
       <TimelineDialogHost />

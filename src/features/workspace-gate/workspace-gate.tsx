@@ -1,63 +1,33 @@
 /**
  * WorkspaceGate
  *
- * Wraps the router and, when the current URL is a storage-dependent route
- * (`/projects*` or `/editor*`), blocks it until the user has picked a
- * workspace folder and granted read/write permission:
+ * Wraps the router and blocks it until the browser's origin-private file
+ * system (OPFS) workspace is ready:
  *
- *   1. Check handles-db for a saved workspace handle
- *   2. If missing → show splash prompting user to pick a folder
- *   3. If present → queryPermission; if granted, set the active root and
- *      render the children. If revoked, show a Reconnect splash.
+ *   1. Get the origin-private root from navigator.storage.getDirectory()
+ *   2. Set it as the active workspace root
+ *   3. Bootstrap the workspace and render the router
  *
- * The landing page (`/`) is not a storage-dependent route — it renders
- * without waiting for the gate, so users see no splash flash on first
- * visit. Navigating into a protected route after the handle is initialized
- * falls through to the "ready" path without additional UI.
- *
- * Also listens for permission-lost signals from fs-primitives and flips
- * back to the Reconnect state mid-session.
+ * OPFS does not require a user-selected folder or a permission prompt. It is
+ * persistent for this browser origin and keeps the demo entry point usable
+ * after a reload.
  */
 
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import {
-  ensureKnownWorkspaceForCurrent,
-  getWorkspaceHandleRecord,
-  isFileSystemAccessSupported,
-  queryHandlePermission,
-  requestHandlePermission,
-  saveWorkspaceHandleRecord,
-} from '@/infrastructure/storage/handles-db'
-import { onPermissionLost, setWorkspaceRoot } from '@/infrastructure/storage/workspace-fs/root'
+import { setWorkspaceRoot } from '@/infrastructure/storage/workspace-fs/root'
 import { createLogger } from '@/shared/logging/logger'
-import { WorkspaceGateSplash } from './workspace-gate-splash'
-import { usePathname } from './use-pathname'
-
-/**
- * Routes that read/write the workspace and therefore need the gate to be
- * ready before their loaders run. Anything else renders freely without
- * waiting on storage initialization.
- */
-function isStorageProtectedPath(pathname: string): boolean {
-  return pathname.startsWith('/projects') || pathname.startsWith('/editor')
-}
 
 const logger = createLogger('WorkspaceGate')
 
 type GateStatus =
   | { kind: 'initializing' }
-  | { kind: 'unavailable' } // Non-Chromium browsers
-  | { kind: 'pick' } // No saved handle
-  | { kind: 'reconnect'; handleName: string } // Saved handle, permission revoked
+  | { kind: 'unavailable'; message: string }
   | { kind: 'ready' }
 
 export function WorkspaceGate({ children }: { children: React.ReactNode }) {
   const [status, setStatus] = useState<GateStatus>({ kind: 'initializing' })
-  const [error, setError] = useState<string | null>(null)
   const { t } = useTranslation()
-  const pathname = usePathname()
-  const needsWorkspace = isStorageProtectedPath(pathname)
 
   const activate = useCallback(async (handle: FileSystemDirectoryHandle) => {
     setWorkspaceRoot(handle)
@@ -79,120 +49,59 @@ export function WorkspaceGate({ children }: { children: React.ReactNode }) {
     window.dispatchEvent(new Event('freecut:ensure-toaster'))
   }, [])
 
-  // Initial load: check if we have a saved handle, check its permission.
+  // Initialize the single hidden workspace before RouterProvider mounts.
+  // Route loaders read from workspace-fs synchronously with navigation, so the
+  // root must be set before the first route is allowed to run.
   useEffect(() => {
     let cancelled = false
     ;(async () => {
-      if (!isFileSystemAccessSupported()) {
-        if (!cancelled) setStatus({ kind: 'unavailable' })
+      if (
+        typeof navigator === 'undefined' ||
+        typeof navigator.storage?.getDirectory !== 'function'
+      ) {
+        if (!cancelled) {
+          setStatus({
+            kind: 'unavailable',
+            message: t('projects.workspaceGate.unsupportedBrowserDescription'),
+          })
+        }
         return
       }
-      // Promote any legacy `workspace:current` into a proper known-workspace
-      // record before we read it, so the indicator's "known workspaces" list
-      // includes the one the user is about to use.
-      await ensureKnownWorkspaceForCurrent()
-      const record = await getWorkspaceHandleRecord()
-      if (!record) {
-        if (!cancelled) setStatus({ kind: 'pick' })
-        return
-      }
-      const handle = record.handle as FileSystemDirectoryHandle
-      const permission = await queryHandlePermission(handle)
+      const handle = await navigator.storage.getDirectory()
       if (cancelled) return
-      if (permission === 'granted') {
-        await activate(handle)
-      } else {
-        setStatus({ kind: 'reconnect', handleName: record.name })
-      }
+      await activate(handle)
     })().catch((error) => {
       logger.error('Gate initialization failed', error)
-      if (!cancelled) setStatus({ kind: 'pick' })
+      if (!cancelled) {
+        setStatus({
+          kind: 'unavailable',
+          message: error instanceof Error ? error.message : String(error),
+        })
+      }
     })
     return () => {
       cancelled = true
     }
-  }, [activate])
-
-  // Permission-lost mid-session → flip to reconnect.
-  useEffect(() => {
-    const unsubscribe = onPermissionLost(() => {
-      void (async () => {
-        const record = await getWorkspaceHandleRecord()
-        setStatus({ kind: 'reconnect', handleName: record?.name ?? 'workspace' })
-      })()
-    })
-    return () => {
-      unsubscribe()
-    }
-  }, [])
-
-  const handlePick = useCallback(async () => {
-    setError(null)
-    try {
-      const handle = await window.showDirectoryPicker({
-        id: 'freecut-workspace',
-        mode: 'readwrite',
-        startIn: 'documents',
-      })
-      const queryState = await queryHandlePermission(handle)
-      const finalState =
-        queryState === 'granted' ? queryState : await requestHandlePermission(handle)
-      if (finalState !== 'granted') {
-        setError(t('projects.workspaceGate.folderPermissionDenied'))
-        setStatus({ kind: 'reconnect', handleName: handle.name })
-        return
-      }
-      await saveWorkspaceHandleRecord(handle)
-      await activate(handle)
-    } catch (error) {
-      if (error instanceof DOMException && error.name === 'AbortError') {
-        // User cancelled the picker; stay on splash.
-        return
-      }
-      logger.error('Folder pick failed', error)
-      setError(t('projects.workspaceGate.folderPickFailed'))
-    }
   }, [activate, t])
-
-  const handleReconnect = useCallback(async () => {
-    setError(null)
-    const record = await getWorkspaceHandleRecord()
-    if (!record) {
-      setStatus({ kind: 'pick' })
-      return
-    }
-    const handle = record.handle as FileSystemDirectoryHandle
-    const permission = await requestHandlePermission(handle)
-    if (permission === 'granted') {
-      await activate(handle)
-      return
-    }
-    setError(t('projects.workspaceGate.reconnectPermissionDenied'))
-  }, [activate, t])
-
-  // Routes that don't touch storage never wait on the gate — no splash, no
-  // flash, even on first load while we're checking handles-db.
-  if (!needsWorkspace) {
-    return <>{children}</>
-  }
 
   if (status.kind === 'ready') {
     return <>{children}</>
   }
 
-  // On protected routes during initialization, render a bare background
-  // block so the transition from "checking" to "ready" or "splash" is
-  // invisible instead of a logo+spinner flash.
+  // During initialization, render a bare background block so the transition
+  // from "checking" to "ready" is invisible instead of a splash flash.
   if (status.kind === 'initializing') {
     return <div className="min-h-screen bg-background" aria-hidden="true" />
   }
 
   return (
-    <WorkspaceGateSplash
-      status={status}
-      error={error}
-      onPickFolder={handlePick}
-      onReconnect={handleReconnect}
-    />
+    <div className="min-h-screen bg-background flex items-center justify-center px-6 text-center">
+      <div className="max-w-lg">
+        <h1 className="text-2xl font-semibold mb-2">
+          {t('projects.workspaceGate.unsupportedBrowser')}
+        </h1>
+        <p className="text-sm text-muted-foreground">{status.message}</p>
+      </div>
+    </div>
   )
 }

@@ -39,9 +39,9 @@ body.canvas-translate-cursor-not-allowed * {
     --popover: oklch(0.16 0 0); /* #292929 - Dropdowns */
     --popover-foreground: oklch(0.92 0 0);
 
-    /* Primary - Orange accent (playback, active states) */
-    --primary: oklch(0.68 0.19 45); /* #FF8C3A - Vibrant orange */
-    --primary-foreground: oklch(0.12 0 0); /* Dark text on primary */
+    /* Primary - Blue accent (playback, active states) */
+    --primary: oklch(0.68 0.19 250); /* Vibrant blue */
+    --primary-foreground: oklch(0.98 0 0); /* Near-white text on primary */
 
     /* Secondary - Subtle panel variation */
     --secondary: oklch(0.22 0 0); /* #383838 - Secondary surfaces */
@@ -62,7 +62,7 @@ body.canvas-translate-cursor-not-allowed * {
     /* Borders - Subtle separators */
     --border: oklch(0.25 0 0); /* #404040 - Borders */
     --input: oklch(0.24 0 0); /* #3d3d3d - Input borders */
-    --ring: oklch(0.68 0.19 45); /* Orange focus ring */
+    --ring: oklch(0.68 0.19 250); /* Blue focus ring */
 
     /* Panel system - Layered depth */
     --panel-bg: oklch(0.18 0 0); /* #2e2e2e - Panels */
@@ -72,12 +72,12 @@ body.canvas-translate-cursor-not-allowed * {
     /* Sidebar */
     --sidebar: oklch(0.18 0 0);
     --sidebar-foreground: oklch(0.92 0 0);
-    --sidebar-primary: oklch(0.68 0.19 45);
-    --sidebar-primary-foreground: oklch(0.12 0 0);
+    --sidebar-primary: oklch(0.68 0.19 250);
+    --sidebar-primary-foreground: oklch(0.98 0 0);
     --sidebar-accent: oklch(0.22 0 0);
     --sidebar-accent-foreground: oklch(0.92 0 0);
     --sidebar-border: oklch(0.25 0 0);
-    --sidebar-ring: oklch(0.68 0.19 45);
+    --sidebar-ring: oklch(0.68 0.19 250);
 
     --radius: 0.5rem;
   }

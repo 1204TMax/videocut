@@ -1,12 +1,6 @@
 import { useEffect, useCallback, memo, useLayoutEffect, useReducer, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 import { Slider } from '@/components/ui/slider'
 import {
   Film,
@@ -16,31 +10,17 @@ import {
   Magnet,
   Scissors,
   Gauge,
-  ArrowRightLeft,
-  BetweenHorizontalEnd,
-  ChevronDown,
-  X,
   MousePointer2,
   Undo2,
   Redo2,
-  Flag,
-  FlagOff,
-  Link2,
-  Volume2,
-  Diamond,
 } from 'lucide-react'
 import { Separator } from '@/components/ui/separator'
-import { formatHotkeyBinding } from '@/config/hotkeys'
 import { useTimelineStore } from '../stores/timeline-store'
 import { useTimelineCommandStore } from '../stores/timeline-command-store'
 import { useZoomStore } from '../stores/zoom-store'
-import { usePlaybackStore } from '@/shared/state/playback'
-import { useEditorStore } from '@/shared/state/editor'
 import { useSelectionStore } from '@/shared/state/selection'
-import { ZOOM_MIN, ZOOM_MAX, SLIP_SLIDE_TOOLS_ENABLED } from '../constants'
+import { ZOOM_MIN, ZOOM_MAX } from '../constants'
 import { EDITOR_LAYOUT_CSS_VALUES } from '@/config/editor-layout'
-import { useResolvedHotkeys } from '@/features/timeline/deps/settings'
-import { MicRecordControl } from './mic-record-control'
 
 interface TimelineHeaderProps {
   onZoomChange?: (newZoom: number) => void
@@ -58,38 +38,6 @@ function TrimEditIcon({ className }: { className?: string }) {
     </svg>
   )
 }
-
-const InlineKeyframesToggle = memo(function InlineKeyframesToggle({
-  isOpen,
-  onToggle,
-}: {
-  isOpen: boolean
-  onToggle: () => void
-}) {
-  const { t } = useTranslation()
-  const label = t(
-    isOpen ? 'timeline.keyframeEditor.editLane.hide' : 'timeline.keyframeEditor.editLane.show',
-    { defaultValue: isOpen ? 'Hide keyframe panel' : 'Show keyframe panel' },
-  )
-
-  return (
-    <Button
-      variant="ghost"
-      size="icon"
-      style={{
-        width: EDITOR_LAYOUT_CSS_VALUES.toolbarButtonSize,
-        height: EDITOR_LAYOUT_CSS_VALUES.toolbarButtonSize,
-      }}
-      className={isOpen ? 'bg-primary text-primary-foreground hover:bg-primary/90' : ''}
-      onClick={onToggle}
-      aria-label={label}
-      aria-pressed={isOpen}
-      data-tooltip={label}
-    >
-      <Diamond className="h-3.5 w-3.5" />
-    </Button>
-  )
-})
 
 function isDifferentSliderValue(previousValue: number | null, nextValue: number): boolean {
   return previousValue === null || Math.abs(previousValue - nextValue) > 0.000001
@@ -349,12 +297,7 @@ const TimelineZoomControls = memo(function TimelineZoomControls({
         finishSliderZoomInteraction()
       }
     },
-    [
-      commitSliderZoom,
-      finishSliderZoomInteraction,
-      releaseSliderZoomGesture,
-      renderSliderPreview,
-    ],
+    [commitSliderZoom, finishSliderZoomInteraction, releaseSliderZoomGesture, renderSliderPreview],
   )
 
   const controlledSliderValue = zoomToSlider(settledZoomLevel)
@@ -439,9 +382,9 @@ const TimelineZoomControls = memo(function TimelineZoomControls({
  * Timeline Toolbar Component
  *
  * Unified toolbar for timeline controls:
- * - Select/Razor tools
+ * - Select/Trim/Razor/Rate Stretch tools
  * - Undo/Redo
- * - In/Out points, Snap toggle
+ * - Snap toggle
  * - Zoom controls
  */
 export const TimelineHeader = memo(function TimelineHeader({
@@ -451,36 +394,16 @@ export const TimelineHeader = memo(function TimelineHeader({
   onZoomToFit,
 }: TimelineHeaderProps) {
   const { t } = useTranslation()
-  const hotkeys = useResolvedHotkeys()
   const snapEnabled = useTimelineStore((s) => s.snapEnabled)
   const toggleSnap = useTimelineStore((s) => s.toggleSnap)
-  const audioSkimmingEnabled = useTimelineStore((s) => s.audioSkimmingEnabled)
-  const toggleAudioSkimming = useTimelineStore((s) => s.toggleAudioSkimming)
-  const inPoint = useTimelineStore((s) => s.inPoint)
-  const outPoint = useTimelineStore((s) => s.outPoint)
-  const setInPoint = useTimelineStore((s) => s.setInPoint)
-  const setOutPoint = useTimelineStore((s) => s.setOutPoint)
-  const clearInOutPoints = useTimelineStore((s) => s.clearInOutPoints)
-  const addMarker = useTimelineStore((s) => s.addMarker)
-  // Only subscribe to marker count for disabled state - avoids re-render on marker changes
-  const hasMarkers = useTimelineStore((s) => s.markers.length > 0)
-  const removeMarker = useTimelineStore((s) => s.removeMarker)
-  const clearAllMarkers = useTimelineStore((s) => s.clearAllMarkers)
   // NOTE: Don't subscribe to currentFrame - only needed in click handlers
   // Read from store directly when needed to avoid re-renders every frame
   const activeTool = useSelectionStore((s) => s.activeTool)
   const setActiveTool = useSelectionStore((s) => s.setActiveTool)
-  const selectedMarkerId = useSelectionStore((s) => s.selectedMarkerId)
-  const inlineKeyframesOpen = useSelectionStore((s) => s.editKeyframePanelOpen)
-  const toggleEditKeyframePanel = useSelectionStore((s) => s.toggleEditKeyframePanel)
-  const clearSelection = useSelectionStore((s) => s.clearSelection)
-  const linkedSelectionEnabled = useEditorStore((s) => s.linkedSelectionEnabled)
-  const setLinkedSelectionEnabled = useEditorStore((s) => s.setLinkedSelectionEnabled)
   const canUndo = useTimelineCommandStore((s) => s.canUndo)
   const canRedo = useTimelineCommandStore((s) => s.canRedo)
   const undoLabel = useTimelineCommandStore((s) => s.getUndoLabel())
   const redoLabel = useTimelineCommandStore((s) => s.getRedoLabel())
-  const SlipSlideFlyoutIcon = activeTool === 'slide' ? BetweenHorizontalEnd : ArrowRightLeft
 
   const btnSize = {
     width: EDITOR_LAYOUT_CSS_VALUES.toolbarButtonSize,
@@ -580,51 +503,6 @@ export const TimelineHeader = memo(function TimelineHeader({
             >
               <Gauge className="w-3.5 h-3.5" />
             </Button>
-
-            {SLIP_SLIDE_TOOLS_ENABLED ? (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    style={{ height: EDITOR_LAYOUT_CSS_VALUES.toolbarButtonSize }}
-                    className={`gap-1 px-2 ${
-                      activeTool === 'slip' || activeTool === 'slide'
-                        ? 'bg-primary text-primary-foreground hover:bg-primary/90'
-                        : ''
-                    }`}
-                    aria-label={t('timeline.header.slipSlideTools')}
-                    data-tooltip={t('timeline.header.slipSlideToolsTooltip')}
-                  >
-                    <span className="flex items-center gap-1">
-                      <span className="inline-flex items-center justify-center">
-                        <SlipSlideFlyoutIcon className="w-3.5 h-3.5" />
-                      </span>
-                      <ChevronDown className="w-3 h-3 opacity-70" />
-                    </span>
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="start">
-                  <DropdownMenuItem
-                    onClick={() => setActiveTool(activeTool === 'slip' ? 'select' : 'slip')}
-                  >
-                    <ArrowRightLeft className="w-3.5 h-3.5" />
-                    <span className="flex-1">{t('timeline.header.slipTool')}</span>
-                    <span className="text-xs text-muted-foreground">
-                      {formatHotkeyBinding(hotkeys.SLIP_TOOL)}
-                    </span>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={() => setActiveTool(activeTool === 'slide' ? 'select' : 'slide')}
-                  >
-                    <BetweenHorizontalEnd className="w-3.5 h-3.5" />
-                    <span className="flex-1">{t('timeline.header.slideTool')}</span>
-                    <span className="text-xs text-muted-foreground">
-                      {formatHotkeyBinding(hotkeys.SLIDE_TOOL)}
-                    </span>
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            ) : null}
           </div>
 
           <Separator orientation="vertical" className="h-5 mx-1.5" />
@@ -674,99 +552,6 @@ export const TimelineHeader = memo(function TimelineHeader({
 
           <Separator orientation="vertical" className="h-5 mx-1.5" />
 
-          {/* In/Out Points */}
-          <div className="flex items-center gap-1">
-            <Button
-              variant="ghost"
-              size="icon"
-              style={btnSize}
-              onClick={() => setInPoint(usePlaybackStore.getState().currentFrame)}
-              aria-label={t('timeline.header.setInPoint')}
-              data-tooltip={t('timeline.header.setInPointTooltip')}
-            >
-              <span className="text-sm font-bold" style={{ color: 'var(--color-timeline-in)' }}>
-                [
-              </span>
-            </Button>
-
-            <Button
-              variant="ghost"
-              size="icon"
-              style={btnSize}
-              onClick={() => setOutPoint(usePlaybackStore.getState().currentFrame)}
-              aria-label={t('timeline.header.setOutPoint')}
-              data-tooltip={t('timeline.header.setOutPointTooltip')}
-            >
-              <span className="text-sm font-bold" style={{ color: 'var(--color-timeline-out)' }}>
-                ]
-              </span>
-            </Button>
-
-            <Button
-              variant="ghost"
-              size="icon"
-              style={btnSize}
-              onClick={clearInOutPoints}
-              disabled={inPoint === null && outPoint === null}
-              aria-label={t('timeline.header.clearInOutPoints')}
-              data-tooltip={t('timeline.header.clearInOutPointsTooltip')}
-            >
-              <X className="w-3.5 h-3.5" />
-            </Button>
-          </div>
-
-          <Separator orientation="vertical" className="h-5 mx-1.5" />
-
-          {/* Markers */}
-          <div className="flex items-center gap-1">
-            <Button
-              variant="ghost"
-              size="icon"
-              style={btnSize}
-              onClick={() => addMarker(usePlaybackStore.getState().currentFrame)}
-              aria-label={t('timeline.header.addMarker')}
-              data-tooltip={t('timeline.header.addMarkerTooltip')}
-            >
-              <Flag className="w-3.5 h-3.5" style={{ color: 'var(--color-timeline-marker)' }} />
-            </Button>
-
-            <Button
-              variant="ghost"
-              size="icon"
-              style={btnSize}
-              onClick={() => {
-                if (selectedMarkerId) {
-                  removeMarker(selectedMarkerId)
-                  clearSelection()
-                }
-              }}
-              disabled={!selectedMarkerId}
-              aria-label={t('timeline.header.removeSelectedMarker')}
-              data-tooltip={t('timeline.header.removeSelectedMarkerTooltip')}
-            >
-              <FlagOff className="w-3.5 h-3.5" />
-            </Button>
-
-            <Button
-              variant="ghost"
-              size="icon"
-              style={btnSize}
-              onClick={clearAllMarkers}
-              disabled={!hasMarkers}
-              aria-label={t('timeline.header.clearAllMarkers')}
-              data-tooltip={t('timeline.header.clearAllMarkersTooltip')}
-            >
-              <X className="w-3.5 h-3.5" />
-            </Button>
-          </div>
-
-          <Separator orientation="vertical" className="h-5 mx-1.5" />
-
-          {/* Microphone voiceover */}
-          <MicRecordControl />
-
-          <Separator orientation="vertical" className="h-5 mx-1.5" />
-
           {/* Snap Toggle */}
           <Button
             variant="ghost"
@@ -784,57 +569,6 @@ export const TimelineHeader = memo(function TimelineHeader({
             }
           >
             <Magnet className="w-3.5 h-3.5" />
-          </Button>
-
-          <Button
-            variant="ghost"
-            size="icon"
-            style={btnSize}
-            className={
-              audioSkimmingEnabled ? 'bg-primary text-primary-foreground hover:bg-primary/90' : ''
-            }
-            onClick={toggleAudioSkimming}
-            aria-label={
-              audioSkimmingEnabled
-                ? t('timeline.header.disableAudioSkimming')
-                : t('timeline.header.enableAudioSkimming')
-            }
-            aria-pressed={audioSkimmingEnabled}
-            data-tooltip={
-              audioSkimmingEnabled
-                ? t('timeline.header.audioSkimmingEnabled')
-                : t('timeline.header.audioSkimmingDisabled')
-            }
-          >
-            <Volume2 className="w-3.5 h-3.5" />
-          </Button>
-
-          <Separator orientation="vertical" className="h-5 mx-1.5" />
-
-          <InlineKeyframesToggle isOpen={inlineKeyframesOpen} onToggle={toggleEditKeyframePanel} />
-
-          <Button
-            variant="ghost"
-            size="icon"
-            style={btnSize}
-            className={
-              linkedSelectionEnabled ? 'bg-primary text-primary-foreground hover:bg-primary/90' : ''
-            }
-            onClick={() => setLinkedSelectionEnabled(!linkedSelectionEnabled)}
-            aria-label={
-              linkedSelectionEnabled
-                ? t('timeline.header.disableLinkedSelection')
-                : t('timeline.header.enableLinkedSelection')
-            }
-            aria-pressed={linkedSelectionEnabled}
-            data-tooltip={t('timeline.header.linkedSelectionTooltip', {
-              state: linkedSelectionEnabled
-                ? t('timeline.header.linkedSelectionOn')
-                : t('timeline.header.linkedSelectionOff'),
-              shortcut: formatHotkeyBinding(hotkeys.TOGGLE_LINKED_SELECTION),
-            })}
-          >
-            <Link2 className="w-3.5 h-3.5" />
           </Button>
         </div>
       </div>

@@ -18,10 +18,10 @@
   --color-timeline-motion-segment: oklch(0.38 0 0);
   --color-timeline-image: oklch(0.62 0.17 250);
   --color-timeline-text: oklch(0.671 0 290);
-  --color-timeline-shape: oklch(0.68 0.19 45);
+  --color-timeline-shape: oklch(0.68 0.19 250);
 
   /* Playhead color */
-  --color-timeline-playhead: oklch(0.68 0.19 45); /* Orange (matches primary) */
+  --color-timeline-playhead: oklch(0.68 0.19 250); /* Blue (matches primary) */
 
   /* In/Out marker colors */
   --color-timeline-in: oklch(0.65 0.18 142); /* Green - in point */
@@ -41,8 +41,8 @@
   --color-timeline-marker: oklch(0.65 0.2 250); /* Blue - timeline markers */
 
   /* Snap/Join indicator colors */
-  --color-timeline-snap: #f97316; /* orange-500 - snap indicator */
-  --color-timeline-join: #fb923c; /* orange-400 - join indicator */
+  --color-timeline-snap: oklch(0.68 0.19 250); /* Blue snap indicator */
+  --color-timeline-join: oklch(0.74 0.16 248); /* Light blue join indicator */
 
   --color-video-preview-background: oklch(0.1914 0 58);
 }
@@ -285,13 +285,13 @@ body.timeline-external-media-drag [data-transition-id] * {
   );
 }
 
-/* Shape clip gradient background - subtle orange tint */
+/* Shape clip gradient background - subtle blue tint */
 .bg-shape-gradient {
   background: linear-gradient(
     to bottom,
-    oklch(0.2 0.02 45) 0%,
-    oklch(0.28 0.02 45) 50%,
-    oklch(0.2 0.02 45) 100%
+    oklch(0.2 0.02 250) 0%,
+    oklch(0.28 0.02 250) 50%,
+    oklch(0.2 0.02 250) 100%
   );
 }
 
